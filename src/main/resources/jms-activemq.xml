@@ -33,6 +33,8 @@
 
     <amq:queue id="notificationQueue" physicalName="wordCount.queue"/>
 
+    <amq:queue id="sendQueue" physicalName="result.queue"/>
+
     <amq:connectionFactory id="jmsConnectionFactory"
                            brokerURL="tcp://localhost:61616"/>
 

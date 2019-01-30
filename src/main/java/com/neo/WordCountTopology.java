@@ -6,13 +6,18 @@ import org.apache.storm.StormSubmitter;
 import org.apache.storm.generated.AlreadyAliveException;
 import org.apache.storm.generated.AuthorizationException;
 import org.apache.storm.generated.InvalidTopologyException;
+import org.apache.storm.jms.JmsMessageProducer;
 import org.apache.storm.jms.JmsProvider;
 import org.apache.storm.jms.JmsTupleProducer;
+import org.apache.storm.jms.bolt.JmsBolt;
 import org.apache.storm.jms.spout.JmsSpout;
 import org.apache.storm.topology.TopologyBuilder;
 import org.apache.storm.tuple.Fields;
+import org.apache.storm.tuple.ITuple;
 import org.apache.storm.utils.Utils;
 
+import javax.jms.JMSException;
+import javax.jms.Message;
 import javax.jms.Session;
 
 /**
@@ -26,6 +31,10 @@ public class WordCountTopology {
         // JMS Queue Provider
         JmsProvider jmsQueueProvider = new SpringJmsProvider("jms-activemq.xml", "jmsConnectionFactory",
                 "notificationQueue");
+        //JMS Queue Provider,用来发送结果到MQ
+        JmsProvider sendProvider = new SpringJmsProvider("jms-activemq.xml", "jmsConnectionFactory",
+                "sendQueue");
+
         // JMS Producer
         JmsTupleProducer producer = new MyJmsTupleProducer();
 
@@ -34,14 +43,24 @@ public class WordCountTopology {
         queueSpout.setJmsProvider(jmsQueueProvider);
         queueSpout.setJmsTupleProducer(producer);
         queueSpout.setJmsAcknowledgeMode(Session.AUTO_ACKNOWLEDGE);
-        queueSpout.deactivate();
 
         //Topology
         TopologyBuilder builder = new TopologyBuilder();
         builder.setSpout("jmsSpout", queueSpout, 1);
         builder.setBolt("splitBolt", new SplitSentenceBolt(), 1).shuffleGrouping("jmsSpout");
         builder.setBolt("countBolt", new WordCountBolt(), 1).fieldsGrouping("splitBolt", new Fields("word"));
+        //新增sendBolt，用来把结果发送到ActiveMQ
+        JmsBolt sendBolt = new JmsBolt();
+        sendBolt.setJmsProvider(sendProvider);
+        sendBolt.setJmsMessageProducer(new JmsMessageProducer() {
+            public Message toMessage(Session session, ITuple input) throws JMSException {
+                System.out.println("发送结果到MQ:" + input.toString());
+                return session.createTextMessage(input.getStringByField("countResult"));
+            }
+        });
+        builder.setBolt("sendBolt", sendBolt, 1).shuffleGrouping("countBolt");
 
+        //Topology Config
         Config config = new Config();
         config.setDebug(false);
 

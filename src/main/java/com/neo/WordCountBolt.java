@@ -1,10 +1,13 @@
 package com.neo;
 
+import com.alibaba.fastjson.JSON;
 import org.apache.storm.task.OutputCollector;
 import org.apache.storm.task.TopologyContext;
 import org.apache.storm.topology.OutputFieldsDeclarer;
 import org.apache.storm.topology.base.BaseRichBolt;
+import org.apache.storm.tuple.Fields;
 import org.apache.storm.tuple.Tuple;
+import org.apache.storm.tuple.Values;
 
 import java.util.HashMap;
 import java.util.Map;
@@ -16,9 +19,11 @@ import java.util.Map;
  */
 public class WordCountBolt extends BaseRichBolt {
 
+    private OutputCollector collector;
     private Map<String, Long> counts;
 
     public void prepare(Map stormConf, TopologyContext context, OutputCollector collector) {
+        this.collector = collector;
         this.counts = new HashMap<String, Long>();
     }
 
@@ -27,7 +32,9 @@ public class WordCountBolt extends BaseRichBolt {
         /*因为topology要长时间启动，所以不能在cleanup中打印结果。
          * 所以发送的Message后加EOF来判断,e.g. : Enter some text here for the message body for the message body EOF*/
         if ("EOF".equals(word)) {
-            System.out.println("词频统计结果:" + this.counts);
+            String jsonString = JSON.toJSONString(this.counts);
+            System.out.println("词频统计结果:" + jsonString);
+            this.collector.emit(new Values(jsonString));
             this.counts.clear();
             return;
         }
@@ -40,7 +47,7 @@ public class WordCountBolt extends BaseRichBolt {
     }
 
     public void declareOutputFields(OutputFieldsDeclarer declarer) {
-
+        declarer.declare(new Fields("countResult"));
     }
 
     @Override
