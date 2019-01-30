@@ -55,7 +55,7 @@
             <artifactId>storm-core</artifactId>
             <version>${storm.version}</version>
             <!--部署到集群上时改成provided-->
-            <scope>provided</scope>
+            <!--<scope>provided</scope>-->
         </dependency>
         <dependency>
             <groupId>org.apache.storm</groupId>
