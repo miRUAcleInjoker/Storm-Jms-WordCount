@@ -11,13 +11,13 @@ import org.apache.storm.jms.JmsProvider;
 import org.apache.storm.jms.JmsTupleProducer;
 import org.apache.storm.jms.bolt.JmsBolt;
 import org.apache.storm.jms.spout.JmsSpout;
+import org.apache.storm.mongodb.bolt.MongoInsertBolt;
+import org.apache.storm.mongodb.common.mapper.MongoMapper;
+import org.apache.storm.mongodb.common.mapper.SimpleMongoMapper;
 import org.apache.storm.topology.TopologyBuilder;
 import org.apache.storm.tuple.Fields;
-import org.apache.storm.tuple.ITuple;
 import org.apache.storm.utils.Utils;
 
-import javax.jms.JMSException;
-import javax.jms.Message;
 import javax.jms.Session;
 
 /**
@@ -48,17 +48,22 @@ public class WordCountTopology {
         TopologyBuilder builder = new TopologyBuilder();
         builder.setSpout("jmsSpout", queueSpout, 1);
         builder.setBolt("splitBolt", new SplitSentenceBolt(), 1).shuffleGrouping("jmsSpout");
-        builder.setBolt("countBolt", new WordCountBolt(), 1).fieldsGrouping("splitBolt", new Fields("word"));
+        builder.setBolt("countBolt", new WordCountBolt(), 1)
+                .fieldsGrouping("splitBolt", new Fields("word"))
+                .shuffleGrouping("jmsSpout");
         //新增sendBolt，用来把结果发送到ActiveMQ
         JmsBolt sendBolt = new JmsBolt();
         sendBolt.setJmsProvider(sendProvider);
-        sendBolt.setJmsMessageProducer(new JmsMessageProducer() {
-            public Message toMessage(Session session, ITuple input) throws JMSException {
-                System.out.println("发送结果到MQ:" + input.toString());
-                return session.createTextMessage(input.getStringByField("countResult"));
-            }
+        sendBolt.setJmsMessageProducer((JmsMessageProducer) (session, input) -> {
+            System.out.println("发送结果到MQ:" + input.toString());
+            return session.createTextMessage(input.getStringByField("countResult"));
         });
         builder.setBolt("sendBolt", sendBolt, 1).shuffleGrouping("countBolt");
+        //新增MongoCountRecordBolt，将查询记录和结果存到MongoDB
+        MongoMapper mongoMapper = new SimpleMongoMapper().withFields("sentence", "countResult", "date");
+        MongoInsertBolt insertBolt = new MongoInsertBolt("mongodb://127.0.0.1:27017/test",
+                "CountRecord", mongoMapper);
+        builder.setBolt("mongoCountRecordBolt", insertBolt, 1).shuffleGrouping("countBolt");
 
         //Topology Config
         Config config = new Config();

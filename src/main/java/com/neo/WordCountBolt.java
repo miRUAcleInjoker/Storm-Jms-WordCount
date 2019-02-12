@@ -1,6 +1,7 @@
 package com.neo;
 
 import com.alibaba.fastjson.JSON;
+import org.apache.commons.lang.time.DateFormatUtils;
 import org.apache.storm.task.OutputCollector;
 import org.apache.storm.task.TopologyContext;
 import org.apache.storm.topology.OutputFieldsDeclarer;
@@ -9,6 +10,7 @@ import org.apache.storm.tuple.Fields;
 import org.apache.storm.tuple.Tuple;
 import org.apache.storm.tuple.Values;
 
+import java.util.Date;
 import java.util.HashMap;
 import java.util.Map;
 
@@ -21,20 +23,29 @@ public class WordCountBolt extends BaseRichBolt {
 
     private OutputCollector collector;
     private Map<String, Long> counts;
+    private String sentence;
 
     public void prepare(Map stormConf, TopologyContext context, OutputCollector collector) {
         this.collector = collector;
-        this.counts = new HashMap<String, Long>();
+        this.counts = new HashMap<>();
     }
 
     public void execute(Tuple input) {
-        String word = input.getStringByField("word");
+        //如果元组时jmsSpout发来的
+        if (input.getSourceComponent().equals("jmsSpout")) {
+            this.sentence = input.getStringByField("sentence");
+        }
+        String word = "";
+        if (input.getSourceComponent().equals("splitBolt")) {
+            word = input.getStringByField("word");
+        }
         /*因为topology要长时间启动，所以不能在cleanup中打印结果。
          * 所以发送的Message后加EOF来判断,e.g. : Enter some text here for the message body for the message body EOF*/
         if ("EOF".equals(word)) {
             String jsonString = JSON.toJSONString(this.counts);
             System.out.println("词频统计结果:" + jsonString);
-            this.collector.emit(new Values(jsonString));
+            //noinspection SpellCheckingInspection
+            this.collector.emit(new Values(this.sentence, jsonString, DateFormatUtils.format(new Date(), "yyMMddHHmmss")));
             this.counts.clear();
             return;
         }
@@ -47,7 +58,7 @@ public class WordCountBolt extends BaseRichBolt {
     }
 
     public void declareOutputFields(OutputFieldsDeclarer declarer) {
-        declarer.declare(new Fields("countResult"));
+        declarer.declare(new Fields("sentence", "countResult", "date"));
     }
 
     @Override
